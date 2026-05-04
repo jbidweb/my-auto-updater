@@ -20,4 +20,4 @@ jobs:
           
           # 텔레그램 메시지 발송 (금고에 저장된 정보 사용)
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=🚀 업데이트 완료! (현재 시간: $(date +'%H:%M'))"
+          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=🚀 DB 업데이트 완료! (현재 시간: $(date +'%H:%M'))"
