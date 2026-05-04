@@ -12,26 +12,30 @@ jobs:
     steps:
       - name: Run Updates
         run: |
-          # 1. 현재 몇 분인지 확인
+          # 1. 현재 분 확인
           MIN=$(date +%M)
           
-          # 2. 서버가 '진짜 사람'이라고 믿게 만드는 가짜 정보 (헤더)
+          # 2. 브라우저 정보 (서버 속이기용)
           USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-          # 3. 시간대별 주소 호출 (보안 접속 https 사용 및 리다이렉트 자동 추적 -L 추가)
+          # 3. 주소 호출 로직 (테스트를 위해 버튼 누르면 무조건 1번 주소라도 실행하게 함)
           if [ "$MIN" == "10" ]; then 
-            RESULT=$(curl -sL -H "User-Agent: $USER_AGENT" "https://jbidweb.com/jbupdate1.php")
+            TARGET="https://jbidweb.com/jbupdate1.php"
           elif [ "$MIN" == "20" ]; then 
-            RESULT=$(curl -sL -H "User-Agent: $USER_AGENT" "https://jbidweb.com/jbupdate2.php")
+            TARGET="https://jbidweb.com/jbupdate2.php"
           elif [ "$MIN" == "30" ]; then 
-            RESULT=$(curl -sL -H "User-Agent: $USER_AGENT" "https://jbidweb.com/jbupdate3.php")
+            TARGET="https://jbidweb.com/jbupdate3.php"
           else
-            RESULT="예약된 시간이 아닙니다 ($MIN 분)"
+            # 10, 20, 30분이 아닐 때 수동으로 누르면 1번 주소를 실행합니다.
+            TARGET="https://jbidweb.com/jbupdate1.php"
           fi
           
-          # 4. 텔레그램으로 결과 보고 (서버가 응답한 내용까지 포함해서 보냅니다)
-          # 서버 응답(RESULT)이 너무 길면 오류가 날 수 있어 앞부분 50자만 잘라서 보냅니다.
-          REPORT="${RESULT:0:50}"
+          # 실제 서버 호출
+          RESULT=$(curl -sL -H "User-Agent: $USER_AGENT" "$TARGET")
+          
+          # 4. 텔레그램 발송 (서버 대답 포함)
+          # 응답 내용 중 특수문자 오류 방지를 위해 간단히 정리해서 보냅니다.
+          REPORT=$(echo "$RESULT" | cut -c1-100)
           
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=🚀 업데이트 실행 완료!%0A✅ 실행시각: $(date +'%H:%M') (${MIN}분)%0A📝 서버응답: ${REPORT}"
+          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=🚀 업데이트 실행 완료!%0A✅ 실행대상: $TARGET%0A✅ 실행시각: $(date +'%H:%M') (${MIN}분)%0A📝 서버응답: $REPORT"
