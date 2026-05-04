@@ -2,9 +2,9 @@ name: Scheduled Update
 
 on:
   schedule:
-    # 한국 시간 오전 10시 ~ 오후 9시 (월~금 실행)
+    # 10분, 20분, 30분(UTC 01~12시)에 실행을 '요청'함
     - cron: '10,20,30 1-12 * * 1-5'
-  workflow_dispatch: # 수동 실행 버튼
+  workflow_dispatch:
 
 jobs:
   update:
@@ -12,25 +12,24 @@ jobs:
     steps:
       - name: Run Updates
         run: |
+          # 현재 '분'을 가져옴
           MIN=$(date +%M)
           USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-          # 정해진 시간에만 해당 주소 호출 (그 외 시간에 누르면 실행 안 됨)
-          if [ "$MIN" == "10" ]; then 
+          # 깃허브가 조금 늦게 실행해도 작동하도록 범위를 지정합니다 (예: 20~29분 사이에만 켜지면 2번 실행)
+          if [ "$MIN" -ge 10 ] && [ "$MIN" -lt 20 ]; then
             TARGET="https://jbidweb.com/jbupdate1.php"
-          elif [ "$MIN" == "20" ]; then 
+          elif [ "$MIN" -ge 20 ] && [ "$MIN" -lt 30 ]; then
             TARGET="https://jbidweb.com/jbupdate2.php"
-          elif [ "$MIN" == "30" ]; then 
+          elif [ "$MIN" -ge 30 ] && [ "$MIN" -lt 45 ]; then
             TARGET="https://jbidweb.com/jbupdate3.php"
           else
-            echo "정해진 예약 시간이 아닙니다."
-            exit 0 
+            # 만약 너무 늦게(예: 50분) 실행되었다면 가장 최근 예약인 3번을 실행
+            TARGET="https://jbidweb.com/jbupdate3.php"
           fi
           
-          # 서버 호출 및 응답 저장
           RESULT=$(curl -sL -H "User-Agent: $USER_AGENT" "$TARGET")
           REPORT=$(echo "$RESULT" | cut -c1-100)
           
-          # 텔레그램 발송
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=🚀 정기 업데이트 완료!%0A✅ 대상: $TARGET%0A✅ 시각: $(date +'%H:%M') (${MIN}분)%0A📝 결과: $REPORT"
+          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=🚀 업데이트 완료!%0A✅ 대상: $TARGET%0A✅ 실제시각: $(date +'%H:%M') (${MIN}분)%0A📝 결과: $REPORT"
