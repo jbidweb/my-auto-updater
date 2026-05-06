@@ -2,9 +2,11 @@ name: Scheduled Update
 
 on:
   schedule:
-    # 매일 실행 (요일 제한 1-5 제거)
-    # UTC 01:10 ~ 12:30 사이 (한국시간 10:10 ~ 21:30)
-    - cron: '10,20,30 1-12 * * *'
+    # 한국시간 기준 오전 10:10, 10:20, 10:30 ~ 저녁 09:10, 21:20, 21:30
+    # UTC 기준 01:10, 01:20, 01:30 ~ 12:10, 12:20, 12:30
+    - cron: '10 1-12 * * *'
+    - cron: '20 1-12 * * *'
+    - cron: '30 1-12 * * *'
   workflow_dispatch:
 
 jobs:
@@ -12,29 +14,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run Updates
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # 서버 시간을 한국 시간(KST)으로 고정하여 계산
-          # 이렇게 하면 UTC 지연과 상관없이 한국 시간 기준으로 로직이 돌아갑니다.
-          KST_HOUR=$(date -d "+9 hours" +%H)
-          KST_MIN=$(date -d "+9 hours" +%M)
+          # 1. 한국 시간 정보 가져오기
+          KST_TIME=$(TZ='Asia/Seoul' date +'%H:%M')
           
+          # 2. '실제 실행된 시간'이 아니라 '예약된 분(Minute)' 정보 확인
+          # GitHub Actions는 원래 실행되어야 할 cron 정보를 변수로 제공합니다.
+          # 예: "10 1-12 * * *" 중 '10'을 추출
+          SCHEDULED_MIN=$(echo "${{ github.event.schedule }}" | cut -d' ' -f1)
+          
+          # 만약 수동 실행(workflow_dispatch)했다면 현재 분을 기준으로 설정
+          if [ -z "$SCHEDULED_MIN" ]; then
+            SCHEDULED_MIN=$(TZ='Asia/Seoul' date +'%M')
+          fi
+
           USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-          # '분' 단위를 기준으로 대상을 정하되, 
-          # GitHub의 실행 지연(최대 10분 이상)을 고려하여 범위를 넉넉하게 잡았습니다.
-          if [ "$KST_MIN" -ge 10 ] && [ "$KST_MIN" -lt 20 ]; then
+          # 3. 예약된 '분'에 따라 타겟 고정 (지연 실행되어도 변하지 않음)
+          if [ "$SCHEDULED_MIN" = "10" ]; then
             TARGET="https://jbidweb.com/jbupdate1.php"
-          elif [ "$KST_MIN" -ge 20 ] && [ "$KST_MIN" -lt 30 ]; then
+            LABEL="1회차(10분 예약)"
+          elif [ "$SCHEDULED_MIN" = "20" ]; then
             TARGET="https://jbidweb.com/jbupdate2.php"
+            LABEL="2회차(20분 예약)"
           else
-            # 30분 예약이거나, 서버 지연으로 인해 30분 이후에 실행된 모든 경우
             TARGET="https://jbidweb.com/jbupdate3.php"
+            LABEL="3회차(30분 예약)"
           fi
+
+          # 4. 실제 요청
+          RESULT=$(curl -sL -f -H "User-Agent: $USER_AGENT" "$TARGET" || echo "실패")
+          REPORT=$(echo "$RESULT" | cut -c1-100 | sed 's/[&]/%26/g')
           
-          # 실제 요청
-          RESULT=$(curl -sL -H "User-Agent: $USER_AGENT" "$TARGET")
-          REPORT=$(echo "$RESULT" | cut -c1-100)
+          # 5. 텔레그램 메시지 (예약 정보와 실제 실행 시각을 모두 표시)
+          TEXT="🚀 *업데이트 완료 ($LABEL)*%0A✅ *대상:* $TARGET%0A✅ *예약시각:* ${SCHEDULED_MIN}분%0A✅ *실행시각:* $KST_TIME%0A📝 *결과:* $REPORT"
           
-          # 텔레그램 메시지 발송 (시간 정보를 한국 시간으로 명확히 표시)
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=🚀 업데이트 완료!%0A✅ 대상: $TARGET%0A✅ 한국시각: ${KST_HOUR}:${KST_MIN}%0A📝 결과: $REPORT"
+          curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
+            -d "chat_id=$TELEGRAM_CHAT_ID" \
+            -d "parse_mode=Markdown" \
+            -d "text=$TEXT"
